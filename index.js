@@ -19,21 +19,14 @@ let myURI = process.env['MONGO-URI'];
 var urlShort = mongoose.connect(myURI, { UseNewUrlParser: true, UseUnifiedTopology: true});
 
 //create schema
-/* let xciseSchema = new mongoose.Schema(
+const xciseSchema = new mongoose.Schema(
   {
   username: {type: String, required: true},
-  description: String,
-  duration: Number,
-  date: Date,
-})  */ 
-
-let xciseSchema = new mongoose.Schema(
-  {
-  username: {type: String, required: true,},
-  logs:[{description: String,
+  count: {type: Number, default:0},
+  logs: [{description: String,
          duration: Number,
          date: Date}],
- // count: {type: Number, default: ()=> this.logs.length},
+ 
 })  
 
 let Xcise = mongoose.model("Xcise", xciseSchema);
@@ -45,56 +38,68 @@ app.post("/api/users", async function(req, res){
   
   var user = new Xcise(userInput);
   await user.save();
-  /* var data = Xcise.find({username:req.body.username }).select({username:1, _id:1}); */
+  
   return res.status(200).json({"username": user.username, "_id": user['_id']});
 })
 
+// get all user endpoint
+app.get("/api/users", async (req,res) => 
+  {var userData = await Xcise.find().select({"username": 1, "_id":1});     
+  return res.send(userData);
+  });
+
 // Create a user
 app.post("/api/users/:_id/exercises", async function(req, res){
+  var inputDate;
+  if (req.body.date === "") inputDate = new Date(Date.now())
+  else inputDate = req.body.date;    
   
-  var log = {description: req.body.description,
+ 
+  var log = await {description: req.body.description,
              duration: req.body.duration,
-             date: req.body.date};
-          
+             date: inputDate};
 
+  var userId = await req.body[":_id"];
   
 // update the excercise info.  
-  var updateUser= await Xcise.findOneAndUpdate({_id: req.body[":_id"]}, { $push: { logs: log} }, /* {new: true}, */ function(err, updateUser){
+  var updateUser = await Xcise.findOneAndUpdate({_id: userId}, {$push: { logs: log}, $inc: {count: 1} }, {new: true}, function(err, updateUser){
     if(err) console.log(err)
     else return updateUser});
-  //console.log(updateUser); 
-  var logNo = await updateUser.logs.length - 1; 
+ 
+  
   return res.status(200)
             .json({"_id":updateUser["_id"],
-                   "username":updateUser.username,                                          "date": log.date.toDateString(),
+                   "username":updateUser.username,                                                     "date": new Date(log.date).toDateString(),
                    "duration":log.duration,
                    "description":log.description})
 })
 
-// api endpoint
-app.get('/api/users/:_id/logs', function(req, res){
-  var id = req.params["_id"];
-  var {from: fromDate, to: toDate, limit: showLimit} = req.query;
-  var logs = Xcise.findById("id")
-                  .where("date")
+// logs api endpoint
+app.get('/api/users/:_id/logs', async function(req, res){
+  var showLimit = Number(req.query.limit);
+  var fromDate = req.query.from || new Date(0);
+  var toDate = req.query.to || new Date(Date.now());
+
+  console.log(`${fromDate}, ${toDate}`);
+  
+  /* const logs = await Xcise.find({
+      _id: req.params["_id"],
+      "logs.date": { $gte: fromDate , $lte: toDate }
+    })
+    .select({"username":1, "count":1, "_id":1, "logs":1})
+    .limit(showLimit) */ 
+    
+  var logs = await Xcise.where("_id")
+                  .eq(req.params["_id"])
+                  .where("logs.date")
                   .gte(fromDate)
                   .lte(toDate)
+                  .select({"username":1, "count":1, "_id":1, "logs":1})
                   .limit(showLimit);
-  res.status(200).json(logs)
+  
+  return res.status(200).send(logs)
 })
 
-
-/* const limit = Number(req.query.limit) || 0;
-  const from = req.query.from || new Date(0);
-  const to = req.query.to || new Date(Date.now())
-
-    console.log("with query");
-    const log = await Log.find({
-      userid: req.params.id,
-      date: { $gte: from , $lte: to }
-    })
-    .select("-_id -userid -__v")
-    .limit(limit) */
 
 const listener = app.listen(process.env.PORT || 3000, () => {
   console.log('Your app is listening on port ' + listener.address().port)
